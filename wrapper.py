@@ -291,5 +291,5 @@ class Top(Elaboratable):
         return m
 
 
-plat = PynqPlatform()
+plat = PynqPlatform(toolchain='yosys_nextpnr')
 plat.build(Top())
