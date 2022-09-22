@@ -290,6 +290,7 @@ class Top(Elaboratable):
 
         return m
 
-
+from pathlib import Path
+nextpnr_dir=str(Path(__file__).parent.absolute() / "nextpnr-xilinx")
 plat = PynqPlatform(toolchain='yosys_nextpnr')
-plat.build(Top())
+plat.build(Top(), nextpnr_dir=nextpnr_dir)
