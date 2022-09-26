@@ -3,15 +3,15 @@
 # Copyright Marcelina Kościelnicka.
 
 
-from nmigen import *
-from nmigen.vendor.xilinx_7series import *
+from amaranth import *
+from amaranth.vendor.xilinx import XilinxPlatform
 from nmigen_boards.resources import *
-from nmigen.build import *
-from nmigen.lib.cdc import ResetSynchronizer
+from amaranth.build import *
+from amaranth.lib.cdc import ResetSynchronizer
 from axi import AxiInterface
 
 
-class PynqPlatform(Xilinx7SeriesPlatform):
+class PynqPlatform(XilinxPlatform):
     device = 'xc7z020'
     package = 'clg400'
     speed = '1'
@@ -24,6 +24,7 @@ class PynqPlatform(Xilinx7SeriesPlatform):
         *SwitchResources(pins="M20 M19", attrs=Attrs(IOSTANDARD="LVCMOS33")),
     ]
     connectors = []
+    default_clk = "clk125"
 
 
 class Top(Elaboratable):
@@ -34,15 +35,30 @@ class Top(Elaboratable):
         fclk = [Signal(name=f'fclk{i}') for i in range(4)]
         rst = Signal()
 
-        m.domains.sync = ClockDomain()
-
         kwargs = {}
         kwargs['o_FCLKCLK'] = Cat(*fclk)
         kwargs['o_FCLKRESETN'] = frst
 
+
+        # XXX
+        # For some reason using fclk instead of 'clk125' does emit
+        # invalid verilog: 'module top(led_1__io, led_0__io);' - no 'clk' param.
+        # As a result, only 'comb' domain works as expected.
+        # clock_signal = fclk[0]
+        clock_signal = ClockSignal('sync')
+
+        # m.domains.sync = ClockDomain()
+        # m.submodules.rst_sync = rst_sync = ResetSynchronizer(~frst[0], domain="sync")
+        # platform.add_clock_constraint(fclk[0], 50e6)
+
+        # m.d.comb += [
+        #     ClockSignal('sync').eq(fclk[0]),
+        # ]
+
+
         # AXI
         for i in range(2):
-            kwargs[f'i_MAXIGP{i}ACLK'] = fclk[0]
+            kwargs[f'i_MAXIGP{i}ACLK'] = clock_signal
 
             kwargs[f'i_MAXIGP{i}ARREADY'] = C(0, 1)
 
@@ -61,7 +77,7 @@ class Top(Elaboratable):
             kwargs[f'i_MAXIGP{i}RDATA'] = C(0, 32)
 
         for nm in ['SAXIGP0', 'SAXIGP1', 'SAXIHP0', 'SAXIHP1', 'SAXIHP2', 'SAXIHP3', 'SAXIACP']:
-            kwargs[f'i_{nm}ACLK'] = fclk[0]
+            kwargs[f'i_{nm}ACLK'] = clock_signal
 
             kwargs[f'i_{nm}ARVALID'] = C(0, 1)
             kwargs[f'i_{nm}ARBURST'] = C(0, 2)
@@ -281,14 +297,23 @@ class Top(Elaboratable):
         kwargs['o_SAXIHP0RDATA'] = saxihp0.r_data
 
         m.submodules.ps = Instance('PS7', **kwargs)
-        m.submodules.rst_sync = rst_sync = ResetSynchronizer(~frst[0], domain="sync")
-        platform.add_clock_constraint(fclk[0], 50e6)
 
-        m.d.comb += [
-            ClockSignal('sync').eq(fclk[0]),
-        ]
+        sync = m.d.sync
+        comb = m.d.comb
+        
+        ctr = Signal(27)
+        sync += ctr.eq(ctr + 1)
+        
+        led0 = platform.request("led", 0)
+        led1 = platform.request("led", 1)
+
+        comb += led0.eq(1)
+        
+        with m.If(ctr == 2**26):
+            sync += led1.eq(~led1)
 
         return m
+
 
 from pathlib import Path
 nextpnr_dir=str(Path(__file__).parent.absolute() / "nextpnr-xilinx")
