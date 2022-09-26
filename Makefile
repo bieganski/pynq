@@ -4,7 +4,7 @@ all: build
 	openFPGALoader --board pynq_z2 build/top.bit
 
 clean:
-	@rm -f build/top.bit
+	@rm -rf build
 
 build: build/top.bit
 

@@ -206,10 +206,6 @@ class Top(Elaboratable):
         maxigp0 = AxiInterface(32, 12)
         saxihp0 = AxiInterface(64, 6)
         
-        # XXX
-        # from accelerator import Accelerator
-        # m.submodules.accel = accel = Accelerator(maxigp0, saxihp0)
-
         kwargs['i_MAXIGP0ARREADY'] = maxigp0.ar_ready
         kwargs['o_MAXIGP0ARVALID'] = maxigp0.ar_valid
         kwargs['o_MAXIGP0ARBURST'] = maxigp0.ar_burst
@@ -306,11 +302,49 @@ class Top(Elaboratable):
         
         led0 = platform.request("led", 0)
         led1 = platform.request("led", 1)
+        led2 = platform.request("led", 2)
 
         comb += led0.eq(1)
         
-        with m.If(ctr == 2**26):
-            sync += led1.eq(~led1)
+        # with m.If(ctr == 2**26):
+        #     sync += led1.eq(~led1)
+
+        # =============         AXI
+
+        # saxihp0 - FPGA master, high performance, only for memory (both external and OCM)
+
+
+        # https://support.xilinx.com/s/question/0D52E00006hpmFqSAI/ddr-memory-base-address-in-zynq?language=en_US
+
+        # grep for 'Table 29-1' in ug585
+        ocm_addr = 0x0
+        ddr_addr = 0x10_0000
+
+        fst = Signal()
+
+        with m.FSM():
+            with m.State("INIT"):
+                
+                with m.If(fst):
+                    # guard.
+                    sync += led2.eq(1)
+
+                comb += [
+                    saxihp0.aw_addr.eq(ocm_addr),
+                    saxihp0.aw_valid.eq(1),
+                    # saxihp0.aw_id.eq(0),
+                    # saxihp0.aw_size.eq(1), # 2 bytes
+                    saxihp0.aw_len.eq(0), # single transaction within burst
+                    saxihp0.w_data.eq(0xaabb),
+                ]
+                
+                with m.If(saxihp0.aw_ready):
+                    m.next = "DONE"
+            
+            with m.State("DONE"):
+                sync += fst.eq(1)
+                comb += led1.eq(1)
+
 
         return m
 
